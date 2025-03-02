@@ -48,6 +48,11 @@ const AppContextProvider = ({ children }) => {
             setResultImage(false);
     
             const token = await getToken();
+            if (!token) {
+                toast.error("Authentication failed. Please log in again.");
+                return;
+            }
+    
             const tokenData = JSON.parse(atob(token.split('.')[1])); // Decode JWT payload
             const clerkId = tokenData.sub; // Extract Clerk ID
     
@@ -57,29 +62,27 @@ const AppContextProvider = ({ children }) => {
             formData.append("image", image);
             formData.append("clerkId", clerkId);
     
-            const response = await axios.post(backendUrl + "/api/image/remove-bg", formData, { 
-                headers: { token, "Content-Type": "multipart/form-data" } 
+            const response = await axios.post(`${backendUrl}/api/image/remove-bg`, formData, { 
+                headers: { 
+                    Authorization: `Bearer ${token}`,  // ✅ Corrected Authorization header
+                    "Content-Type": "multipart/form-data"
+                } 
             });
     
             console.log("✅ Backend Response:", response.data);
     
-            // ✅ Handle No Credit Balance error
             if (!response.data.success && response.data.message === "No Credit Balance") {
                 toast.error("You have no credit balance left. Please buy more credits.");
-                setTimeout(() => {
-                    navigate('/buy'); // Redirect after showing the message
-                }, 2000); // Redirect after 2 seconds
+                setTimeout(() => navigate('/buy'), 2000);
                 return;
             }
     
-            // ✅ Proceed if processing is successful
             if (response.data.success && response.data.resultImage) {
                 console.log("🖼️ Setting resultImage in state:", response.data.resultImage);
                 setResultImage(response.data.resultImage);
-                navigate('/result'); // Navigate only after getting a valid result
+                navigate('/result'); 
     
-                // ✅ Fetch updated credits after API call
-                loadCreditsData();
+                loadCreditsData(); // ✅ Fetch updated credits after API call
             } else {
                 console.warn("⚠️ No result image received from API!");
                 toast.error("Failed to process the image. Please try again.");
@@ -90,7 +93,6 @@ const AppContextProvider = ({ children }) => {
             toast.error(error.response?.data?.message || "An error occurred. Please try again.");
         }
     };
-    
     
     
     const value = {

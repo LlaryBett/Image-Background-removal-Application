@@ -11,7 +11,7 @@ const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 const stripeWebhook = async (req, res) => {
     try {
-        // Parse the event from the request body
+        // ✅ Directly use req.body (Without verifying signature)
         const event = req.body;
 
         console.log("📢 Stripe Webhook Triggered!");
@@ -21,17 +21,41 @@ const stripeWebhook = async (req, res) => {
             const session = event.data.object;
             const paymentId = session.payment_intent;
             const orderId = session.id;
+            const userEmail = session.customer_email;
+            const transactionId = session.metadata?.transactionId;
 
             console.log("✅ Payment Successful!");
             console.log("💳 Payment ID:", paymentId);
             console.log("📦 Order ID:", orderId);
+            console.log("📧 User Email:", userEmail);
+            console.log("🆔 Transaction ID:", transactionId);
 
-            // TODO: Update credits in the database here
+            // ✅ Fetch the transaction from MongoDB
+            const transaction = await transactionModel.findById(transactionId);
+            if (!transaction || transaction.payment) {
+                console.error("❌ Transaction not found or already paid:", transactionId);
+                return res.status(400).json({ message: "Invalid transaction" });
+            }
 
+            // ✅ Find user by Clerk ID
+            const user = await userModel.findOne({ clerkId: transaction.clerkId });
+            if (!user) {
+                console.error("❌ User not found:", transaction.clerkId);
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            // ✅ Update user credits
+            user.creditBalance += transaction.credits;
+            await user.save();
+
+            // ✅ Mark transaction as paid
+            transaction.payment = true;
+            await transaction.save();
+
+            console.log(`✅ Credits updated for ${user.email}: ${user.creditBalance}`);
             return res.status(200).json({ message: "Success", paymentId, orderId });
         }
 
-        // Handle other event types if needed
         console.log(`⚠️ Unhandled Event Type: ${event.type}`);
         return res.status(400).json({ message: "Unhandled event type" });
     } catch (err) {
@@ -39,6 +63,7 @@ const stripeWebhook = async (req, res) => {
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 };
+
 
 // ✅ Clerk Webhooks Handling
 const clerkWebhooks = async (req, res) => {
@@ -165,16 +190,17 @@ const payment = async (req, res) => {
                     quantity: 1,
                 },
             ],
-            metadata: { transactionId: newTransaction._id.toString() },
+            metadata: { transactionId: newTransaction._id.toString() }, // ✅ Add metadata
         });
-        
+
         res.json({ success: true, id: session.id });
-        
+
     } catch (error) {
         console.error("Stripe Error:", error.message);
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
 const verifyStripepay = async (req, res) => {
     try {
         const { stripepay_order_id } = req.body;
